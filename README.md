@@ -44,6 +44,7 @@ Ese enlace lo podrán abrir otras computadoras desde cualquier navegador.
 - Inventario actual
 
 La app incluye un botón para descargar una plantilla con la estructura esperada.
+La plantilla incluye una hoja `Productos`, una hoja `Parámetros ABC` y una hoja `Configuración`.
 También tolera diferencias de mayúsculas, espacios y acentos en los nombres de columnas.
 
 ## Fórmulas de inventario

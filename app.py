@@ -294,7 +294,7 @@ def canonicalize_columns(data: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def build_template() -> bytes:
-    template = pd.DataFrame(
+    product_template = pd.DataFrame(
         [
             {
                 "Código de producto": "SKU-001",
@@ -312,13 +312,51 @@ def build_template() -> bytes:
         ],
         columns=REQUIRED_COLUMNS,
     )
+    abc_template = pd.DataFrame(
+        [
+            {
+                "Clasificación ABC": "A",
+                "Días de inventario": 30,
+                "Entrega proveedor (días)": 15,
+                "Buffer seguridad (días)": 10,
+            },
+            {
+                "Clasificación ABC": "B",
+                "Días de inventario": 25,
+                "Entrega proveedor (días)": 10,
+                "Buffer seguridad (días)": 5,
+            },
+            {
+                "Clasificación ABC": "C",
+                "Días de inventario": 20,
+                "Entrega proveedor (días)": 7,
+                "Buffer seguridad (días)": 3,
+            },
+        ]
+    )
+    config_template = pd.DataFrame(
+        [
+            {
+                "Parámetro": "Días hábiles de consumo por mes",
+                "Valor sugerido": 26,
+                "Descripción": "Se usa para calcular Promedio diario = Promedio mensual / días hábiles.",
+            }
+        ]
+    )
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        template.to_excel(writer, index=False, sheet_name="Plantilla")
-        worksheet = writer.sheets["Plantilla"]
-        for column_cells in worksheet.columns:
-            max_length = max(len(str(cell.value or "")) for cell in column_cells)
-            worksheet.column_dimensions[column_cells[0].column_letter].width = max_length + 3
+        product_template.to_excel(writer, index=False, sheet_name="Productos")
+        abc_template.to_excel(writer, index=False, sheet_name="Parámetros ABC")
+        config_template.to_excel(writer, index=False, sheet_name="Configuración")
+
+        for worksheet in writer.sheets.values():
+            worksheet.freeze_panes = "A2"
+            for column_cells in worksheet.columns:
+                max_length = max(len(str(cell.value or "")) for cell in column_cells)
+                worksheet.column_dimensions[column_cells[0].column_letter].width = min(
+                    max_length + 3,
+                    55,
+                )
     return buffer.getvalue()
 
 
