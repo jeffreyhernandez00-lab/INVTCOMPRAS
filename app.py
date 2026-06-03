@@ -5,6 +5,7 @@ import unicodedata
 import numpy as np
 import pandas as pd
 import streamlit as st
+from openpyxl.styles import Font, PatternFill
 
 
 REQUIRED_COLUMNS = [
@@ -60,8 +61,10 @@ OUTPUT_COLUMNS = [
     "Punto de reorden",
     "Inventario mínimo",
     "Inventario máximo",
+    "Diferencia vs máximo",
     "Días de consumo disponibles",
     "Sugerido de compra",
+    "Estado inventario",
 ]
 
 PURCHASE_COLUMNS = [
@@ -371,6 +374,14 @@ def to_excel_bytes(
         data.to_excel(writer, index=False, sheet_name=sheet_name)
         worksheet = writer.sheets[sheet_name]
         worksheet.freeze_panes = "A2"
+        header_fill = PatternFill("solid", fgColor="007A45")
+        header_font = Font(color="FFFFFF", bold=True)
+        excess_fill = PatternFill("solid", fgColor="FCE4D6")
+        purchase_fill = PatternFill("solid", fgColor="E2F0D9")
+
+        for header_cell in worksheet[1]:
+            header_cell.fill = header_fill
+            header_cell.font = header_font
 
         for column_index, column_name in enumerate(data.columns, start=1):
             column_letter = worksheet.cell(row=1, column=column_index).column_letter
@@ -388,9 +399,23 @@ def to_excel_bytes(
                 "Costo unitario",
                 "Total costo",
                 "Total estimado compra",
+                "Diferencia vs máximo",
             }:
                 for cell in worksheet[column_letter][1:]:
                     cell.number_format = '#,##0.00'
+
+        if "Estado inventario" in data.columns:
+            state_column = data.columns.get_loc("Estado inventario") + 1
+            for row_index in range(2, len(data) + 2):
+                state = worksheet.cell(row=row_index, column=state_column).value
+                if state == "Exceso":
+                    fill = excess_fill
+                elif state == "Compra sugerida":
+                    fill = purchase_fill
+                else:
+                    continue
+                for cell in worksheet[row_index]:
+                    cell.fill = fill
     return buffer.getvalue()
 
 
@@ -475,12 +500,19 @@ def calculate_purchase_suggestion(
     )
 
     purchase_raw = result["Inventario máximo"] - result["Inventario actual"]
+    result["Diferencia vs máximo"] = purchase_raw
     applies_purchase = result["Inventario actual"] <= result["Punto de reorden"]
+    has_excess = result["Inventario actual"] > result["Inventario máximo"]
     result["Sugerido de compra"] = np.where(
         applies_purchase,
         np.ceil(np.maximum(purchase_raw, 0)),
         0,
     ).astype(int)
+    result["Estado inventario"] = np.select(
+        [has_excess, result["Sugerido de compra"] > 0],
+        ["Exceso", "Compra sugerida"],
+        default="Normal",
+    )
     result["Total estimado compra"] = (
         result["Sugerido de compra"] * result["Costo unitario"]
     )
@@ -503,6 +535,17 @@ def format_results_for_screen(data: pd.DataFrame) -> pd.DataFrame:
         "Días de consumo disponibles"
     ].replace(np.inf, 0)
     return formatted
+
+
+def style_inventory_status(data: pd.DataFrame):
+    def style_row(row: pd.Series) -> list[str]:
+        if row["Estado inventario"] == "Exceso":
+            return ["background-color: #fde7dc; color: #8a2c0d"] * len(row)
+        if row["Estado inventario"] == "Compra sugerida":
+            return ["background-color: #e7f4df; color: #1f5f2d"] * len(row)
+        return [""] * len(row)
+
+    return data.style.apply(style_row, axis=1)
 
 
 def get_purchase_rows(data: pd.DataFrame) -> pd.DataFrame:
@@ -624,15 +667,17 @@ def render_abc_parameters() -> tuple[dict[str, dict[str, float]], float, float]:
 def render_summary(results: pd.DataFrame) -> None:
     purchase_rows = get_purchase_rows(results)
     counts = results["Clasificación ABC"].value_counts()
+    excess_count = int((results["Estado inventario"] == "Exceso").sum())
 
-    metric_columns = st.columns(4)
+    metric_columns = st.columns(5)
     metric_columns[0].metric("Productos analizados", f"{len(results):,}")
     metric_columns[1].metric(
         "Productos A / B / C",
         f"{counts.get('A', 0)} / {counts.get('B', 0)} / {counts.get('C', 0)}",
     )
     metric_columns[2].metric("Aplican compra", f"{len(purchase_rows):,}")
-    metric_columns[3].metric(
+    metric_columns[3].metric("Con exceso", f"{excess_count:,}")
+    metric_columns[4].metric(
         "Monto estimado compra",
         f"{purchase_rows['Total estimado compra'].sum():,.2f}",
     )
@@ -733,7 +778,7 @@ def main() -> None:
 
     st.subheader("Resultados completos")
     st.dataframe(
-        screen_results[OUTPUT_COLUMNS],
+        style_inventory_status(screen_results[OUTPUT_COLUMNS]),
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -746,6 +791,7 @@ def main() -> None:
             "Punto de reorden": st.column_config.NumberColumn(format="%.2f"),
             "Inventario mínimo": st.column_config.NumberColumn(format="%.2f"),
             "Inventario máximo": st.column_config.NumberColumn(format="%.2f"),
+            "Diferencia vs máximo": st.column_config.NumberColumn(format="%.2f"),
             "Días de consumo disponibles": st.column_config.NumberColumn(format="%.2f"),
         },
     )

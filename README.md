@@ -52,5 +52,8 @@ También tolera diferencias de mayúsculas, espacios y acentos en los nombres de
 - Inventario mínimo = Promedio diario * Buffer seguridad
 - Punto de reorden = Promedio diario * (Entrega proveedor + Buffer seguridad)
 - Inventario máximo = Promedio diario * (Entrega proveedor + Buffer seguridad + Días de inventario)
+- Diferencia vs máximo = Inventario máximo - Inventario actual
 - Promedio mensual = Consumo 6 meses / 6
 - Promedio diario = Promedio mensual / Días hábiles de consumo por mes
+
+Si `Diferencia vs máximo` es negativa, el producto aparece como `Exceso`.
