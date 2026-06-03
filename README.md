@@ -37,6 +37,9 @@ Ese enlace lo podrán abrir otras computadoras desde cualquier navegador.
 - Venta mes 1
 - Venta mes 2
 - Venta mes 3
+- Venta mes 4
+- Venta mes 5
+- Venta mes 6
 - Costo unitario
 - Inventario actual
 
@@ -47,4 +50,6 @@ También tolera diferencias de mayúsculas, espacios y acentos en los nombres de
 
 - Inventario mínimo = Promedio diario * Buffer seguridad
 - Punto de reorden = Promedio diario * (Entrega proveedor + Buffer seguridad)
-- Inventario máximo = Promedio diario * Días inventario máximo
+- Inventario máximo = Promedio diario * (Entrega proveedor + Buffer seguridad + Días de inventario)
+- Promedio mensual = Consumo 6 meses / 6
+- Promedio diario = Promedio mensual / Días hábiles de consumo por mes

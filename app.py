@@ -14,14 +14,24 @@ REQUIRED_COLUMNS = [
     "Venta mes 1",
     "Venta mes 2",
     "Venta mes 3",
+    "Venta mes 4",
+    "Venta mes 5",
+    "Venta mes 6",
     "Costo unitario",
     "Inventario actual",
 ]
 
-NUMERIC_COLUMNS = [
+SALES_COLUMNS = [
     "Venta mes 1",
     "Venta mes 2",
     "Venta mes 3",
+    "Venta mes 4",
+    "Venta mes 5",
+    "Venta mes 6",
+]
+
+NUMERIC_COLUMNS = [
+    *SALES_COLUMNS,
     "Costo unitario",
     "Inventario actual",
 ]
@@ -33,7 +43,10 @@ OUTPUT_COLUMNS = [
     "Venta mes 1",
     "Venta mes 2",
     "Venta mes 3",
-    "Trimestre consumo",
+    "Venta mes 4",
+    "Venta mes 5",
+    "Venta mes 6",
+    "Consumo 6 meses",
     "Promedio mensual",
     "Promedio diario",
     "Costo unitario",
@@ -290,6 +303,9 @@ def build_template() -> bytes:
                 "Venta mes 1": 120,
                 "Venta mes 2": 135,
                 "Venta mes 3": 128,
+                "Venta mes 4": 142,
+                "Venta mes 5": 138,
+                "Venta mes 6": 150,
                 "Costo unitario": 12.5,
                 "Inventario actual": 40,
             }
@@ -373,16 +389,16 @@ def calculate_purchase_suggestion(
     abc_parameters: dict[str, dict[str, float]],
     a_limit: float,
     b_limit: float,
+    working_days: float,
 ) -> pd.DataFrame:
     result = clean_input_data(data)
 
-    sales_columns = ["Venta mes 1", "Venta mes 2", "Venta mes 3"]
-    result["Trimestre consumo"] = result[sales_columns].sum(axis=1)
-    result["Promedio mensual"] = result["Trimestre consumo"] / 3
-    result["Promedio diario"] = result["Promedio mensual"] / 30
-    result["Total costo"] = result["Trimestre consumo"] * result["Costo unitario"]
-    result["Desviación estándar"] = result[sales_columns].std(axis=1, ddof=0)
-    result["Rango"] = result[sales_columns].max(axis=1) - result[sales_columns].min(axis=1)
+    result["Consumo 6 meses"] = result[SALES_COLUMNS].sum(axis=1)
+    result["Promedio mensual"] = result["Consumo 6 meses"] / 6
+    result["Promedio diario"] = result["Promedio mensual"] / working_days
+    result["Total costo"] = result["Consumo 6 meses"] * result["Costo unitario"]
+    result["Desviación estándar"] = result[SALES_COLUMNS].std(axis=1, ddof=0)
+    result["Rango"] = result[SALES_COLUMNS].max(axis=1) - result[SALES_COLUMNS].min(axis=1)
 
     result = result.sort_values("Total costo", ascending=False).reset_index(drop=True)
     total_general = result["Total costo"].sum()
@@ -411,7 +427,9 @@ def calculate_purchase_suggestion(
 
     result["Inventario mínimo"] = result["Promedio diario"] * buffer_days
     result["Punto de reorden"] = result["Promedio diario"] * (lead_time + buffer_days)
-    result["Inventario máximo"] = result["Promedio diario"] * max_days
+    result["Inventario máximo"] = result["Promedio diario"] * (
+        lead_time + buffer_days + max_days
+    )
     result["Días de consumo disponibles"] = np.where(
         result["Promedio diario"] > 0,
         result["Inventario actual"] / result["Promedio diario"],
@@ -458,12 +476,13 @@ def render_abc_parameters() -> tuple[dict[str, dict[str, float]], float, float]:
     st.markdown(
         """
         <div class="formula-note">
-            <strong>Inventario máximo (días):</strong> cobertura objetivo que quieres tener en bodega.<br>
+            <strong>Días de inventario:</strong> cobertura adicional que quieres tener en bodega.<br>
             <strong>Entrega proveedor (días):</strong> días que tarda el proveedor en entregar después del pedido.<br>
             <strong>Buffer seguridad (días):</strong> colchón adicional para evitar quiebres de inventario.
             <br><br>
             <strong>Fórmula aplicada:</strong> el inventario mínimo usa solo el buffer de seguridad;
             el punto de reorden usa entrega del proveedor más buffer, para comprar antes de llegar al mínimo.
+            El inventario máximo suma entrega del proveedor, buffer y días de inventario.
         </div>
         """,
         unsafe_allow_html=True,
@@ -473,19 +492,19 @@ def render_abc_parameters() -> tuple[dict[str, dict[str, float]], float, float]:
         [
             {
                 "Clasificación ABC": "A",
-                "Inventario máximo (días)": 30.0,
+                "Días de inventario": 30.0,
                 "Entrega proveedor (días)": 15.0,
                 "Buffer seguridad (días)": 10.0,
             },
             {
                 "Clasificación ABC": "B",
-                "Inventario máximo (días)": 25.0,
+                "Días de inventario": 25.0,
                 "Entrega proveedor (días)": 10.0,
                 "Buffer seguridad (días)": 5.0,
             },
             {
                 "Clasificación ABC": "C",
-                "Inventario máximo (días)": 20.0,
+                "Días de inventario": 20.0,
                 "Entrega proveedor (días)": 7.0,
                 "Buffer seguridad (días)": 3.0,
             },
@@ -503,11 +522,11 @@ def render_abc_parameters() -> tuple[dict[str, dict[str, float]], float, float]:
                 "Clasificación ABC",
                 help="Grupo asignado por participación acumulada de costo.",
             ),
-            "Inventario máximo (días)": st.column_config.NumberColumn(
-                "Inventario máximo (días)",
+            "Días de inventario": st.column_config.NumberColumn(
+                "Días de inventario",
                 min_value=0.0,
                 step=1.0,
-                help="Días de consumo que deseas cubrir como inventario objetivo.",
+                help="Días adicionales de consumo que deseas tener después de cubrir entrega y seguridad.",
             ),
             "Entrega proveedor (días)": st.column_config.NumberColumn(
                 "Entrega proveedor (días)",
@@ -529,7 +548,7 @@ def render_abc_parameters() -> tuple[dict[str, dict[str, float]], float, float]:
     for row in edited_parameters.to_dict("records"):
         classification = str(row["Clasificación ABC"])
         abc_parameters[classification] = {
-            "max_days": float(row["Inventario máximo (días)"]),
+            "max_days": float(row["Días de inventario"]),
             "lead_time": float(row["Entrega proveedor (días)"]),
             "buffer_days": float(row["Buffer seguridad (días)"]),
         }
@@ -590,6 +609,25 @@ def main() -> None:
 
     render_brand_header()
 
+    st.subheader("Días de consumo")
+    st.markdown(
+        """
+        <div class="formula-note">
+            Este valor indica cuántos días hábiles de venta o consumo tiene un mes.
+            Se usa para calcular: <strong>Promedio diario = Promedio mensual / días hábiles</strong>.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    working_days = st.number_input(
+        "Días hábiles de consumo por mes",
+        min_value=1.0,
+        max_value=31.0,
+        value=26.0,
+        step=1.0,
+        help="Ejemplo: usa 26 si normalmente vendes de lunes a sábado; usa 22 si solo consideras lunes a viernes.",
+    )
+
     abc_parameters, a_limit, b_limit = render_abc_parameters()
 
     if a_limit >= b_limit:
@@ -645,6 +683,7 @@ def main() -> None:
             abc_parameters,
             a_limit,
             b_limit,
+            working_days,
         )
 
     results = st.session_state["results"]
