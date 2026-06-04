@@ -84,6 +84,7 @@ PURCHASE_COLUMNS = [
 
 RESPONSIBLE_SHEET_NAME = "Responsables laboratorio"
 RESPONSIBLE_COLUMNS = ["Laboratorio", "Responsable"]
+DECIMAL_DISPLAY_COLUMNS = {"Costo unitario", "Total estimado compra"}
 
 
 def set_page_style() -> None:
@@ -493,16 +494,13 @@ def to_excel_bytes(
 
             if column_name in percentage_columns:
                 for cell in worksheet[column_letter][1:]:
-                    cell.number_format = "0.00%"
-
-            if column_name in {
-                "Costo unitario",
-                "Total costo",
-                "Total estimado compra",
-                "Diferencia vs máximo",
-            }:
+                    cell.number_format = "0%"
+            elif column_name in DECIMAL_DISPLAY_COLUMNS:
                 for cell in worksheet[column_letter][1:]:
                     cell.number_format = '#,##0.00'
+            elif pd.api.types.is_numeric_dtype(data[column_name]):
+                for cell in worksheet[column_letter][1:]:
+                    cell.number_format = '#,##0'
 
         if "Estado inventario" in data.columns:
             state_column = data.columns.get_loc("Estado inventario") + 1
@@ -637,6 +635,11 @@ def format_results_for_screen(data: pd.DataFrame) -> pd.DataFrame:
     formatted["Días de consumo disponibles"] = formatted[
         "Días de consumo disponibles"
     ].replace(np.inf, 0)
+
+    for column_name in formatted.select_dtypes(include=[np.number]).columns:
+        if column_name not in DECIMAL_DISPLAY_COLUMNS:
+            formatted[column_name] = formatted[column_name].round(0)
+
     return formatted
 
 
@@ -894,17 +897,17 @@ def main() -> None:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "% participación": st.column_config.NumberColumn(format="%.2f %%"),
-            "% participación acumulado": st.column_config.NumberColumn(format="%.2f %%"),
+            "% participación": st.column_config.NumberColumn(format="%.0f %%"),
+            "% participación acumulado": st.column_config.NumberColumn(format="%.0f %%"),
             "Costo unitario": st.column_config.NumberColumn(format="%.2f"),
-            "Total costo": st.column_config.NumberColumn(format="%.2f"),
-            "Promedio mensual": st.column_config.NumberColumn(format="%.2f"),
-            "Promedio diario": st.column_config.NumberColumn(format="%.2f"),
-            "Punto de reorden": st.column_config.NumberColumn(format="%.2f"),
-            "Inventario mínimo": st.column_config.NumberColumn(format="%.2f"),
-            "Inventario máximo": st.column_config.NumberColumn(format="%.2f"),
-            "Diferencia vs máximo": st.column_config.NumberColumn(format="%.2f"),
-            "Días de consumo disponibles": st.column_config.NumberColumn(format="%.2f"),
+            "Total costo": st.column_config.NumberColumn(format="%.0f"),
+            "Promedio mensual": st.column_config.NumberColumn(format="%.0f"),
+            "Promedio diario": st.column_config.NumberColumn(format="%.0f"),
+            "Punto de reorden": st.column_config.NumberColumn(format="%.0f"),
+            "Inventario mínimo": st.column_config.NumberColumn(format="%.0f"),
+            "Inventario máximo": st.column_config.NumberColumn(format="%.0f"),
+            "Diferencia vs máximo": st.column_config.NumberColumn(format="%.0f"),
+            "Días de consumo disponibles": st.column_config.NumberColumn(format="%.0f"),
         },
     )
 

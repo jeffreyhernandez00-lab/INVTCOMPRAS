@@ -60,3 +60,8 @@ La app también muestra un apartado editable para revisar o completar esos respo
 - Promedio diario = Promedio mensual / Días hábiles de consumo por mes
 
 Si `Diferencia vs máximo` es negativa, el producto aparece como `Exceso`.
+
+## Formato de resultados
+
+Solo `Costo unitario` y `Total estimado compra` se muestran con decimales.
+Los promedios, inventarios, punto de reorden, sugeridos, porcentajes y demás cantidades se muestran como números enteros.
