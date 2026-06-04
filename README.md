@@ -44,8 +44,11 @@ Ese enlace lo podrán abrir otras computadoras desde cualquier navegador.
 - Inventario actual
 
 La app incluye un botón para descargar una plantilla con la estructura esperada.
-La plantilla incluye una hoja `Productos`, una hoja `Parámetros ABC` y una hoja `Configuración`.
+La plantilla incluye una hoja `Productos`, una hoja `Responsables laboratorio`, una hoja `Parámetros ABC` y una hoja `Configuración`.
 También tolera diferencias de mayúsculas, espacios y acentos en los nombres de columnas.
+
+La hoja `Responsables laboratorio` permite definir una persona responsable por cada laboratorio.
+La app también muestra un apartado editable para revisar o completar esos responsables antes de calcular.
 
 ## Fórmulas de inventario
 

@@ -41,6 +41,7 @@ OUTPUT_COLUMNS = [
     "Código",
     "Producto",
     "Laboratorio",
+    "Responsable",
     "Venta mes 1",
     "Venta mes 2",
     "Venta mes 3",
@@ -71,6 +72,7 @@ PURCHASE_COLUMNS = [
     "Código",
     "Producto",
     "Laboratorio",
+    "Responsable",
     "Clasificación ABC",
     "Inventario actual",
     "Punto de reorden",
@@ -79,6 +81,9 @@ PURCHASE_COLUMNS = [
     "Costo unitario",
     "Total estimado compra",
 ]
+
+RESPONSIBLE_SHEET_NAME = "Responsables laboratorio"
+RESPONSIBLE_COLUMNS = ["Laboratorio", "Responsable"]
 
 
 def set_page_style() -> None:
@@ -295,6 +300,88 @@ def canonicalize_columns(data: pd.DataFrame) -> pd.DataFrame:
     return canonical_data
 
 
+def read_responsible_sheet(excel_file: pd.ExcelFile) -> pd.DataFrame:
+    sheet_lookup = {normalize_text(sheet_name): sheet_name for sheet_name in excel_file.sheet_names}
+    sheet_name = sheet_lookup.get(normalize_text(RESPONSIBLE_SHEET_NAME))
+
+    if sheet_name is None:
+        return pd.DataFrame(columns=RESPONSIBLE_COLUMNS)
+
+    responsible_data = pd.read_excel(excel_file, sheet_name=sheet_name)
+    column_lookup = {normalize_text(column): column for column in responsible_data.columns}
+
+    if "laboratorio" not in column_lookup or "responsable" not in column_lookup:
+        return pd.DataFrame(columns=RESPONSIBLE_COLUMNS)
+
+    cleaned = pd.DataFrame(
+        {
+            "Laboratorio": responsible_data[column_lookup["laboratorio"]],
+            "Responsable": responsible_data[column_lookup["responsable"]],
+        }
+    )
+    cleaned["Laboratorio"] = cleaned["Laboratorio"].astype(str).str.strip()
+    cleaned["Responsable"] = cleaned["Responsable"].fillna("").astype(str).str.strip()
+    cleaned = cleaned[cleaned["Laboratorio"].ne("")]
+    return cleaned.drop_duplicates(subset=["Laboratorio"], keep="last")
+
+
+def render_responsible_editor(
+    input_data: pd.DataFrame,
+    responsible_data: pd.DataFrame,
+    editor_key: str,
+) -> dict[str, str]:
+    product_data = canonicalize_columns(input_data)
+    laboratories = (
+        product_data["Laboratorio"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .loc[lambda values: values.ne("")]
+        .drop_duplicates()
+        .sort_values()
+        .tolist()
+    )
+    responsible_lookup = dict(
+        zip(responsible_data["Laboratorio"], responsible_data["Responsable"])
+    )
+    editor_data = pd.DataFrame(
+        {
+            "Laboratorio": laboratories,
+            "Responsable": [
+                responsible_lookup.get(laboratory, "") for laboratory in laboratories
+            ],
+        }
+    )
+
+    st.subheader("Responsables por laboratorio")
+    st.markdown(
+        """
+        <div class="formula-note">
+            Define quién será responsable de cada laboratorio. Esta información se agregará a los resultados
+            y a los Excel exportados.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    edited_data = st.data_editor(
+        editor_data,
+        hide_index=True,
+        num_rows="fixed",
+        use_container_width=True,
+        disabled=["Laboratorio"],
+        column_config={
+            "Laboratorio": st.column_config.TextColumn("Laboratorio"),
+            "Responsable": st.column_config.TextColumn(
+                "Responsable",
+                help="Persona encargada de revisar o gestionar la compra de este laboratorio.",
+            ),
+        },
+        key=editor_key,
+    )
+
+    return dict(zip(edited_data["Laboratorio"], edited_data["Responsable"]))
+
+
 @st.cache_data(show_spinner=False)
 def build_template() -> bytes:
     product_template = pd.DataFrame(
@@ -346,9 +433,22 @@ def build_template() -> bytes:
             }
         ]
     )
+    responsible_template = pd.DataFrame(
+        [
+            {
+                "Laboratorio": "Proveedor ejemplo",
+                "Responsable": "Nombre del responsable",
+            }
+        ]
+    )
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         product_template.to_excel(writer, index=False, sheet_name="Productos")
+        responsible_template.to_excel(
+            writer,
+            index=False,
+            sheet_name="Responsables laboratorio",
+        )
         abc_template.to_excel(writer, index=False, sheet_name="Parámetros ABC")
         config_template.to_excel(writer, index=False, sheet_name="Configuración")
 
@@ -453,8 +553,11 @@ def calculate_purchase_suggestion(
     a_limit: float,
     b_limit: float,
     working_days: float,
+    lab_responsibles: dict[str, str] | None = None,
 ) -> pd.DataFrame:
     result = clean_input_data(data)
+    lab_responsibles = lab_responsibles or {}
+    result["Responsable"] = result["Laboratorio"].map(lab_responsibles).fillna("")
 
     result["Consumo 6 meses"] = result[SALES_COLUMNS].sum(axis=1)
     result["Promedio mensual"] = result["Consumo 6 meses"] / 6
@@ -742,7 +845,9 @@ def main() -> None:
         st.session_state.pop("results", None)
 
     try:
-        input_data = pd.read_excel(uploaded_file)
+        excel_file = pd.ExcelFile(uploaded_file)
+        input_data = pd.read_excel(excel_file, sheet_name=0)
+        responsible_data = read_responsible_sheet(excel_file)
     except Exception as error:
         st.error(f"No se pudo leer el archivo Excel: {error}")
         return
@@ -756,6 +861,12 @@ def main() -> None:
     st.subheader("Vista previa")
     st.dataframe(input_data.head(50), use_container_width=True, hide_index=True)
 
+    lab_responsibles = render_responsible_editor(
+        input_data,
+        responsible_data,
+        f"responsible_editor_{current_file_key}",
+    )
+
     calculate = st.button("Calcular sugerido", type="primary", use_container_width=False)
     if not calculate and "results" not in st.session_state:
         return
@@ -767,6 +878,7 @@ def main() -> None:
             a_limit,
             b_limit,
             working_days,
+            lab_responsibles,
         )
 
     results = st.session_state["results"]
